@@ -59,7 +59,7 @@ class BaseConnectorTests(unittest.TestCase):
         asyncio.set_event_loop(None)
 
         self.transport = unittest.mock.Mock()
-        self.stream = aiohttp.StreamParser()
+        self.stream = aiohttp.StreamBuffer(loop=self.loop)
         self.response = HttpResponse('get', 'http://python.org')
 
     def tearDown(self):

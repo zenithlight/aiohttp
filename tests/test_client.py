@@ -19,7 +19,7 @@ class HttpResponseTests(unittest.TestCase):
         asyncio.set_event_loop(None)
 
         self.connection = unittest.mock.Mock()
-        self.stream = aiohttp.StreamParser(loop=self.loop)
+        self.stream = aiohttp.StreamBuffer(loop=self.loop)
         self.response = HttpResponse('get', 'http://python.org')
 
     def tearDown(self):
@@ -90,7 +90,7 @@ class HttpRequestTests(unittest.TestCase):
         self.connection = unittest.mock.Mock()
         self.protocol = unittest.mock.Mock()
         self.protocol.writer.drain.return_value = ()
-        self.stream = aiohttp.StreamParser(loop=self.loop)
+        self.stream = aiohttp.StreamBuffer(loop=self.loop)
 
     def tearDown(self):
         self.loop.close()

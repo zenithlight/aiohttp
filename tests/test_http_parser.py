@@ -2,6 +2,7 @@
 
 from collections import deque
 import asyncio
+import functools
 import zlib
 import unittest
 import unittest.mock
@@ -147,58 +148,59 @@ class DeflateBufferTests(unittest.TestCase):
 class ParsePayloadTests(unittest.TestCase):
 
     def setUp(self):
-        self.stream = unittest.mock.Mock()
+        self.loop = asyncio.new_event_loop()
+        self.stream = aiohttp.StreamBuffer(loop=self.loop)
+        self.out = aiohttp.DataQueue(self.stream)
+        self.parser = protocol.HttpPayloadParser(None)
         asyncio.set_event_loop(None)
 
-    def test_parse_eof_payload(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpPayloadParser(None).parse_eof_payload(out, buf)
-        next(p)
-        p.send(b'data')
-        try:
-            p.throw(aiohttp.EofStream())
-        except aiohttp.EofStream:
-            pass
+    def tearDown(self):
+        self.loop.close()
 
-        self.assertEqual([b'data'], list(out._buffer))
+    def test_parse_eof_payload(self):
+        self.stream.feed_data(b'data')
+        self.stream.feed_eof()
+        out = self.stream.set_parser(self.parser.parse_eof_payload)
+
+        res = self.loop.run_until_complete(out.read())
+        self.assertEqual(res, b'data')
 
     def test_parse_length_payload(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpPayloadParser(None).parse_length_payload(out, buf, 4)
-        next(p)
-        p.send(b'da')
-        p.send(b't')
-        try:
-            p.send(b'aline')
-        except StopIteration:
-            pass
+        self.stream.feed_data(b'da')
+        self.stream.feed_data(b't')
+        self.stream.feed_data(b'aline')
 
-        self.assertEqual(3, len(out._buffer))
-        self.assertEqual(b'data', b''.join(out._buffer))
-        self.assertEqual(b'line', bytes(buf))
+        out = self.stream.set_parser(
+            functools.partial(self.parser.parse_length_payload, length=4))
+        res = self.loop.run_until_complete(out.read())
+
+        self.assertEqual(b'data', res)
+        self.assertEqual(b'line', bytes(self.stream._buffer))
 
     def test_parse_length_payload_eof(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpPayloadParser(None).parse_length_payload(out, buf, 4)
-        next(p)
-        p.send(b'da')
+        self.stream.feed_data(b'da')
+        self.stream.feed_eof()
+
+        out = self.stream.set_parser(
+            functools.partial(self.parser.parse_length_payload, length=4))
+
+        res = self.loop.run_until_complete(out.read())
+        self.assertEqual(b'da', res)
+
         self.assertRaises(
-            errors.IncompleteRead, p.throw, aiohttp.EofStream)
+            errors.IncompleteRead,
+            self.loop.run_until_complete, out.read())
 
     def test_parse_chunked_payload(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpPayloadParser(None).parse_chunked_payload(out, buf)
-        next(p)
-        try:
-            p.send(b'4\r\ndata\r\n4\r\nline\r\n0\r\ntest\r\n')
-        except StopIteration:
-            pass
-        self.assertEqual(b'dataline', b''.join(out._buffer))
-        self.assertEqual(b'', bytes(buf))
+        self.stream.feed_data(b'4\r\ndata\r\n4\r\nline\r\n0\r\ntest\r\n')
+
+        out = self.stream.set_parser(
+            functools.partial(self.parser.parse_length_payload, length=4))
+
+        res = b''.join(self.loop.run_until_complete(out.readall()))
+        print (res)
+        self.assertEqual(b'dataline', res)
+        self.assertEqual(b'', bytes(self.stream._buffer))
 
     def test_parse_chunked_payload_chunks(self):
         out = aiohttp.DataQueue(self.stream)
@@ -353,161 +355,135 @@ class ParsePayloadTests(unittest.TestCase):
 class ParseRequestTests(unittest.TestCase):
 
     def setUp(self):
-        self.stream = unittest.mock.Mock()
+        self.loop = asyncio.new_event_loop()
+        self.stream = aiohttp.StreamBuffer(loop=self.loop)
+        self.out = aiohttp.DataQueue(self.stream)
+        self.parser = protocol.HttpRequestParser()
         asyncio.set_event_loop(None)
 
-    def test_http_request_parser_max_headers(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpRequestParser(8190, 20, 8190)(out, buf)
-        next(p)
+    def tearDown(self):
+        self.loop.close()
 
-        self.assertRaises(
-            errors.LineTooLong,
-            p.send,
+    def test_http_request_parser_max_headers(self):
+        self.stream.feed_data(
             b'get /path HTTP/1.1\r\ntest: line\r\ntest2: data\r\n\r\n')
 
+        parser = protocol.HttpRequestParser(8190, 20, 8190)
+        self.assertRaises(
+            errors.LineTooLong,
+            self.loop.run_until_complete, parser(self.out, self.stream))
+
     def test_http_request_parser(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpRequestParser()(out, buf)
-        next(p)
-        try:
-            p.send(b'get /path HTTP/1.1\r\n\r\n')
-        except StopIteration:
-            pass
-        result = out._buffer[0]
+        self.stream.feed_data(b'get /path HTTP/1.1\r\n\r\n')
+
+        self.loop.run_until_complete(self.parser(self.out, self.stream))
+        result = self.out._buffer[0]
         self.assertEqual(
             ('GET', '/path', (1, 1), deque(), False, None), result)
 
     def test_http_request_parser_eof(self):
         # HttpRequestParser does not fail on EofStream()
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpRequestParser()(out, buf)
-        next(p)
-        p.send(b'get /path HTTP/1.1\r\n')
-        try:
-            p.throw(aiohttp.EofStream())
-        except StopIteration:
-            pass
-        self.assertFalse(out._buffer)
+        self.stream.feed_data(b'get /path HTTP/1.1\r\n')
+        self.stream.feed_eof()
+        self.loop.run_until_complete(self.parser(self.out, self.stream))
+        self.assertFalse(self.out._buffer)
 
     def test_http_request_parser_two_slashes(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpRequestParser()(out, buf)
-        next(p)
-        try:
-            p.send(b'get //path HTTP/1.1\r\n\r\n')
-        except StopIteration:
-            pass
+        self.stream.feed_data(b'get //path HTTP/1.1\r\n\r\n')
+        self.loop.run_until_complete(self.parser(self.out, self.stream))
         self.assertEqual(
-            ('GET', '//path', (1, 1), deque(), False, None), out._buffer[0])
+            ('GET', '//path', (1, 1), deque(), False, None),
+            self.out._buffer[0])
 
     def test_http_request_parser_bad_status_line(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpRequestParser()(out, buf)
-        next(p)
+        self.stream.feed_data(b'\r\n\r\n')
         self.assertRaises(
-            errors.BadStatusLine, p.send, b'\r\n\r\n')
+            errors.BadStatusLine,
+            self.loop.run_until_complete, self.parser(self.out, self.stream))
 
     def test_http_request_parser_bad_method(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpRequestParser()(out, buf)
-        next(p)
+        self.stream.feed_data(b'!12%()+=~$ /get HTTP/1.1\r\n\r\n')
         self.assertRaises(
             errors.BadStatusLine,
-            p.send, b'!12%()+=~$ /get HTTP/1.1\r\n\r\n')
+            self.loop.run_until_complete, self.parser(self.out, self.stream))
 
     def test_http_request_parser_bad_version(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpRequestParser()(out, buf)
-        next(p)
+        self.stream.feed_data(b'GET //get HT/11\r\n\r\n')
         self.assertRaises(
             errors.BadStatusLine,
-            p.send, b'GET //get HT/11\r\n\r\n')
+            self.loop.run_until_complete, self.parser(self.out, self.stream))
 
 
 class ParseResponseTests(unittest.TestCase):
 
     def setUp(self):
-        self.stream = unittest.mock.Mock()
+        self.loop = asyncio.new_event_loop()
+        self.stream = aiohttp.StreamBuffer(loop=self.loop)
+        self.out = aiohttp.DataQueue(self.stream)
+        self.parser = protocol.HttpResponseParser()
         asyncio.set_event_loop(None)
 
+    def tearDown(self):
+        self.loop.close()
+
     def test_http_response_parser_bad_status_line(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpResponseParser()(out, buf)
-        next(p)
-        self.assertRaises(errors.BadStatusLine, p.send, b'\r\n\r\n')
+        self.stream.feed_data(b'\r\n\r\n')
+        self.assertRaises(
+            errors.BadStatusLine,
+            self.loop.run_until_complete, self.parser(self.out, self.stream))
 
     def test_http_response_parser_bad_status_line_eof(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpResponseParser()(out, buf)
-        next(p)
+        self.stream.feed_eof()
+
         self.assertRaises(
-            errors.BadStatusLine, p.throw, aiohttp.EofStream())
+            errors.BadStatusLine,
+            self.loop.run_until_complete, self.parser(self.out, self.stream))
 
     def test_http_response_parser_bad_version(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpResponseParser()(out, buf)
-        next(p)
+        self.stream.feed_data(b'HT/11 200 Ok\r\n\r\n')
+
         with self.assertRaises(errors.BadStatusLine) as cm:
-            p.send(b'HT/11 200 Ok\r\n\r\n')
+            self.loop.run_until_complete(self.parser(self.out, self.stream))
+
         self.assertEqual('HT/11 200 Ok\r\n', cm.exception.args[0])
 
     def test_http_response_parser_no_reason(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpResponseParser()(out, buf)
-        next(p)
-        try:
-            p.send(b'HTTP/1.1 200\r\n\r\n')
-        except StopIteration:
-            pass
-        v, s, r = out._buffer[0][:3]
+        self.stream.feed_data(b'HTTP/1.1 200\r\n\r\n')
+        self.loop.run_until_complete(self.parser(self.out, self.stream))
+
+        v, s, r = self.out._buffer[0][:3]
         self.assertEqual(v, (1, 1))
         self.assertEqual(s, 200)
         self.assertEqual(r, '')
 
     def test_http_response_parser_bad(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpResponseParser()(out, buf)
-        next(p)
+        self.stream.feed_data(b'HTT/1\r\n\r\n')
+
         with self.assertRaises(errors.BadStatusLine) as cm:
-            p.send(b'HTT/1\r\n\r\n')
+            self.loop.run_until_complete(self.parser(self.out, self.stream))
+
         self.assertIn('HTT/1', str(cm.exception))
 
     def test_http_response_parser_code_under_100(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpResponseParser()(out, buf)
-        next(p)
+        self.stream.feed_data(b'HTTP/1.1 99 test\r\n\r\n')
+
         with self.assertRaises(errors.BadStatusLine) as cm:
-            p.send(b'HTTP/1.1 99 test\r\n\r\n')
+            self.loop.run_until_complete(self.parser(self.out, self.stream))
+
         self.assertIn('HTTP/1.1 99 test', str(cm.exception))
 
     def test_http_response_parser_code_above_999(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpResponseParser()(out, buf)
-        next(p)
+        self.stream.feed_data(b'HTTP/1.1 9999 test\r\n\r\n')
+
         with self.assertRaises(errors.BadStatusLine) as cm:
-            p.send(b'HTTP/1.1 9999 test\r\n\r\n')
+            self.loop.run_until_complete(self.parser(self.out, self.stream))
+
         self.assertIn('HTTP/1.1 9999 test', str(cm.exception))
 
     def test_http_response_parser_code_not_int(self):
-        out = aiohttp.DataQueue(self.stream)
-        buf = aiohttp.ParserBuffer()
-        p = protocol.HttpResponseParser()(out, buf)
-        next(p)
+        self.stream.feed_data(b'HTTP/1.1 ttt test\r\n\r\n')
+
         with self.assertRaises(errors.BadStatusLine) as cm:
-            p.send(b'HTTP/1.1 ttt test\r\n\r\n')
+            self.loop.run_until_complete(self.parser(self.out, self.stream))
+
         self.assertIn('HTTP/1.1 ttt test', str(cm.exception))
