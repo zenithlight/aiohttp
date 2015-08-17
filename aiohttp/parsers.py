@@ -67,6 +67,7 @@ __all__ = ('EofStream', 'StreamParser', 'StreamProtocol',
 
 DEFAULT_LIMIT = 2 ** 16
 
+import time
 
 class StreamParser:
     """StreamParser manages incoming bytes stream and protocol parsers.
@@ -92,6 +93,7 @@ class StreamParser:
 
         self.paused = False
         self.transport = None
+        self._t0 = time.time()
 
     @property
     def output(self):
@@ -125,6 +127,10 @@ class StreamParser:
         """send data to current parser or store in buffer."""
         if data is None:
             return
+        
+        t1 = time.time()
+        print("feed data {:.1f}".format((t1-self._t0)*1000))
+        self._t0 = t1
 
         if self._parser:
             try:
@@ -244,6 +250,8 @@ class StreamProtocol(asyncio.streams.FlowControlMixin, asyncio.Protocol):
         self.transport = transport
         self.reader.set_transport(transport)
         self.writer = StreamWriter(transport, self, self.reader, self._loop)
+        self._t0 = time.time()
+        self._first = True
 
     def connection_lost(self, exc):
         self.transport = self.writer = None
@@ -257,6 +265,13 @@ class StreamProtocol(asyncio.streams.FlowControlMixin, asyncio.Protocol):
         super().connection_lost(exc)
 
     def data_received(self, data):
+        t1 = time.time()
+        if self._first:
+            print("Proto first {:.1f}".format((t1-self._t0)*1000), data)
+        else:
+            print("Proto next {:.1f}".format((t1-self._t0)*1000), data)
+        self._first = False
+        self._t0 = t1
         self.reader.feed_data(data)
 
     def eof_received(self):

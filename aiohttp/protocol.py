@@ -136,8 +136,12 @@ class HttpPrefixParser:
         self.allowed_methods = [m.upper() for m in allowed_methods]
 
     def __call__(self, out, buf):
+        import time
+        t0 = time.time()
         raw_data = yield from buf.waituntil(b' ', 12)
         method = raw_data.decode('ascii', 'surrogateescape').strip()
+        t1 = time.time()
+        print("Prefix parser {:.1f}".format((t1-t0)*1000))
 
         # method
         method = method.upper()

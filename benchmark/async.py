@@ -61,16 +61,19 @@ def run_aiohttp(host, port, barrier, profile):
     barrier.wait()
 
     if profile:
+        print('E')
         profiler.enable()
 
     loop.run_forever()
+    if profile:
+        print('D')
+        profiler.disable()
+        profiler.dump_stats('d.prof')
+
     srv.close()
     loop.run_until_complete(handler.finish_connections())
     loop.run_until_complete(srv.wait_closed())
     loop.close()
-
-    if profile:
-        profiler.disable()
 
 
 def run_tornado(host, port, barrier, profile):
@@ -262,7 +265,10 @@ def main(argv):
     tries = args.tries
 
     loop = asyncio.get_event_loop()
-    suite = [run_aiohttp, run_tornado, run_twisted]
+    if args.profile:
+        suite = [run_aiohttp]
+    else:
+        suite = [run_aiohttp, run_tornado, run_twisted]
 
     suite *= tries
     random.shuffle(suite)
