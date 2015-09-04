@@ -8,6 +8,11 @@ from cProfile import Profile
 
 
 @asyncio.coroutine
+def index(request):
+    return web.Response()
+
+
+@asyncio.coroutine
 def test(request):
     txt = 'Hello, ' + request.match_info['name']
     print('keep-alive', request.keep_alive)
@@ -28,6 +33,7 @@ def stop(request):
 @asyncio.coroutine
 def init(loop):
     app = web.Application(loop=loop)
+    app.router.add_route('GET', '/', index)
     app.router.add_route('GET', '/prepare', prepare)
     app.router.add_route('GET', '/stop', stop)
     app.router.add_route('GET', '/test/{name}', test)
