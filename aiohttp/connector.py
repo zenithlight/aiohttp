@@ -122,7 +122,7 @@ class BaseConnector(object):
             self._source_traceback = traceback.extract_stack(sys._getframe(1))
 
         self._conns = {}
-        self._acquired = defaultdict(list)
+        self._acquired = defaultdict(set)
         self._conn_timeout = conn_timeout
         self._keepalive_timeout = keepalive_timeout
         if share_cookies:
@@ -291,12 +291,6 @@ class BaseConnector(object):
                 else:
                     transport, proto = yield from self._create_connection(req)
 
-                if not self._force_close:
-                    if self._conns.get(key, None) is None:
-                        self._conns[key] = []
-
-                    self._conns[key].append((transport, proto,
-                                            self._loop.time()))
             except asyncio.TimeoutError as exc:
                 raise ClientTimeoutError(
                     'Connection timeout to host %s:%s ssl:%s' % key) from exc
@@ -304,12 +298,15 @@ class BaseConnector(object):
                 raise ClientOSError(
                     'Cannot connect to host %s:%s ssl:%s' % key) from exc
 
-        self._acquired[key].append(transport)
+        self._acquired[key].add(transport)
         conn = Connection(self, key, req, transport, proto, self._loop)
         return conn
 
     def _get(self, key):
-        conns = self._conns.get(key)
+        try:
+            conns = self._conns[key]
+        except KeyError:
+            return None, None
         t1 = self._loop.time()
         while conns:
             transport, proto, t0 = conns.pop()
@@ -318,8 +315,12 @@ class BaseConnector(object):
                     transport.close()
                     transport = None
                 else:
+                    if not conns:
+                        # The very last connection was reclaimed: drop the key
+                        del self._conns[key]
                     return transport, proto
-
+        # No more connections: drop the key
+        del self._conns[key]
         return None, None
 
     def _release(self, key, req, transport, protocol, *, should_close=False):
@@ -330,7 +331,7 @@ class BaseConnector(object):
         acquired = self._acquired[key]
         try:
             acquired.remove(transport)
-        except ValueError:  # pragma: no cover
+        except KeyError:  # pragma: no cover
             # this may be result of undetermenistic order of objects
             # finalization due garbage collection.
             pass
@@ -357,15 +358,6 @@ class BaseConnector(object):
 
         reader = protocol.reader
         if should_close or (reader.output and not reader.output.at_eof()):
-            conns = self._conns.get(key)
-            if conns is not None and len(conns) >= 0:
-                # Issue #253: An empty array will eventually be
-                # removed by cleanup, but it's better to pop straight
-                # away, because cleanup might not get called (e.g. if
-                # keepalive is False).
-                if not acquired:
-                    self._conns.pop(key, None)
-
             transport.close()
         else:
             conns = self._conns.get(key)
@@ -672,7 +664,7 @@ class ProxyConnector(TCPConnector):
             key = (req.host, req.port, req.ssl)
             conn = Connection(self, key, proxy_req,
                               transport, proto, self._loop)
-            self._acquired[key].append(conn._transport)
+            self._acquired[key].add(conn._transport)
             proxy_resp = proxy_req.send(conn.writer, conn.reader)
             try:
                 resp = yield from proxy_resp.start(conn, True)

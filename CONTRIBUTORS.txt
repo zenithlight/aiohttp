@@ -44,6 +44,7 @@ Ludovic Gasc
 Lukasz Marcin Dobrzanski
 Marco Paolini
 Martin Richard
+Morgan Delahaye-Prat
 Moss Collum
 Mikhail Lukyanchenko
 Nicolas Braem
@@ -66,6 +67,7 @@ Tolga Tezel
 Vaibhav Sagar
 Vitaly Haritonsky
 Vitaly Magerya
+Vladimir Shulyak
 Vladimir Zakharov
 W. Trevor King
 Yannick Koechlin

@@ -34,6 +34,7 @@ class TestHttpConnection(unittest.TestCase):
 
     def tearDown(self):
         self.loop.close()
+        gc.collect()
 
     @unittest.skipUnless(PY_341, "Requires Python 3.4.1+")
     def test_del(self):
@@ -113,10 +114,11 @@ class TestBaseConnector(unittest.TestCase):
 
         self.transport = unittest.mock.Mock()
         self.stream = aiohttp.StreamParser()
-        self.response = ClientResponse('get', 'http://python.org')
-        self.response._loop = self.loop
+        self.response = ClientResponse('get', 'http://base-conn.org')
+        self.response._post_init(self.loop)
 
     def tearDown(self):
+        self.response.close()
         self.loop.close()
         gc.collect()
 
@@ -239,7 +241,7 @@ class TestBaseConnector(unittest.TestCase):
         tr, proto = unittest.mock.Mock(), unittest.mock.Mock()
         conn._conns[1] = [(tr, proto, self.loop.time() - 1000)]
         self.assertEqual(conn._get(1), (None, None))
-        self.assertEqual(conn._conns[1], [])
+        self.assertFalse(conn._conns)
         conn.close()
 
     def test_release(self):
@@ -253,7 +255,7 @@ class TestBaseConnector(unittest.TestCase):
 
         tr, proto = unittest.mock.Mock(), unittest.mock.Mock()
         key = 1
-        conn._acquired[key].append(tr)
+        conn._acquired[key].add(tr)
         conn._release(key, req, tr, proto)
         self.assertEqual(conn._conns[1][0], (tr, proto, 10))
         self.assertTrue(conn._start_cleanup_task.called)
@@ -273,13 +275,22 @@ class TestBaseConnector(unittest.TestCase):
 
         tr, proto = unittest.mock.Mock(), unittest.mock.Mock()
         key = 1
-        conn._acquired[key].append(tr)
+        conn._acquired[key].add(tr)
         conn._release(key, req, tr, proto)
         self.assertFalse(conn._conns)
         self.assertTrue(tr.close.called)
 
-    def test_release_pop_empty_conns(self):
-        # see issue #253
+    def test_get_pop_empty_conns(self):
+        # see issue #473
+        conn = aiohttp.BaseConnector(loop=self.loop)
+        key = ('127.0.0.1', 80, False)
+        conn._conns[key] = []
+        tr, proto = conn._get(key)
+        self.assertEqual((None, None), (tr, proto))
+        self.assertFalse(conn._conns)
+
+    def test_release_close_do_not_add_to_pool(self):
+        # see issue #473
         conn = aiohttp.BaseConnector(loop=self.loop)
         req = unittest.mock.Mock()
         resp = unittest.mock.Mock()
@@ -288,13 +299,10 @@ class TestBaseConnector(unittest.TestCase):
 
         key = ('127.0.0.1', 80, False)
 
-        conn._conns[key] = []
-
         tr, proto = unittest.mock.Mock(), unittest.mock.Mock()
-        conn._acquired[key].append(tr)
+        conn._acquired[key].add(tr)
         conn._release(key, req, tr, proto)
-        self.assertEqual({}, conn._conns)
-        self.assertTrue(tr.close.called)
+        self.assertFalse(conn._conns)
 
     def test_release_close_do_not_delete_existing_connections(self):
         key = ('127.0.0.1', 80, False)
@@ -309,7 +317,7 @@ class TestBaseConnector(unittest.TestCase):
         req.response = resp
 
         tr, proto = unittest.mock.Mock(), unittest.mock.Mock()
-        conn._acquired[key].append(tr1)
+        conn._acquired[key].add(tr1)
         conn._release(key, req, tr, proto)
         self.assertEqual(conn._conns[key], [(tr1, proto1, 1)])
         self.assertTrue(tr.close.called)
@@ -324,7 +332,7 @@ class TestBaseConnector(unittest.TestCase):
 
         tr, proto = unittest.mock.Mock(), unittest.mock.Mock()
         key = 1
-        conn._acquired[key].append(tr)
+        conn._acquired[key].add(tr)
         conn._release(key, req, tr, proto)
         self.assertEqual(conn._conns, {1: [(tr, proto, 10)]})
         self.assertFalse(tr.close.called)
@@ -338,7 +346,7 @@ class TestBaseConnector(unittest.TestCase):
 
         tr, proto = unittest.mock.Mock(), unittest.mock.Mock()
         key = 1
-        conn._acquired[key].append(tr)
+        conn._acquired[key].add(tr)
         conn._release(key, req, tr, proto)
         self.assertTrue(tr.close.called)
 
