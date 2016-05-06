@@ -4,6 +4,7 @@ import asyncio
 import http.server
 import traceback
 import socket
+import sys
 
 from html import escape as html_escape
 from math import ceil
@@ -243,8 +244,13 @@ class ServerHttpProtocol(aiohttp.StreamProtocol):
                         ceil(now+self._timeout), self.cancel_slow_request)
 
                 # read request headers
-                httpstream = reader.set_parser(self._request_parser)
+                from .httpparser import HttpParser
+                httpParser = HttpParser()
+                print ('Server ====: ')
+
+                httpstream = reader.set_parser(httpParser)
                 message = yield from httpstream.read()
+                print ('Message ==: ', message)
 
                 # cancel slow request timer
                 if self._timeout_handle is not None:
@@ -258,8 +264,8 @@ class ServerHttpProtocol(aiohttp.StreamProtocol):
                         hdrs.TRANSFER_ENCODING, '')):
                     payload = streams.FlowControlStreamReader(
                         reader, loop=self._loop)
-                    reader.set_parser(
-                        aiohttp.HttpPayloadParser(message), payload)
+                    reader.set_parser(httpParser, payload)
+                    # aiohttp.HttpPayloadParser(message), payload)
                 else:
                     payload = EMPTY_PAYLOAD
 
