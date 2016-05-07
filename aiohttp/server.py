@@ -13,6 +13,7 @@ import aiohttp
 from aiohttp import errors, streams, hdrs, helpers
 from aiohttp.log import access_logger, server_logger
 from aiohttp.helpers import ensure_future
+from .httpparser import HttpParser
 
 __all__ = ('ServerHttpProtocol',)
 
@@ -244,13 +245,9 @@ class ServerHttpProtocol(aiohttp.StreamProtocol):
                         ceil(now+self._timeout), self.cancel_slow_request)
 
                 # read request headers
-                from .httpparser import HttpParser
-                httpParser = HttpParser()
-                print ('Server ====: ')
-
-                httpstream = reader.set_parser(httpParser)
+                parser = HttpParser()
+                httpstream = reader.set_parser(parser)
                 message = yield from httpstream.read()
-                print ('Message ==: ', message)
 
                 # cancel slow request timer
                 if self._timeout_handle is not None:
@@ -264,7 +261,7 @@ class ServerHttpProtocol(aiohttp.StreamProtocol):
                         hdrs.TRANSFER_ENCODING, '')):
                     payload = streams.FlowControlStreamReader(
                         reader, loop=self._loop)
-                    reader.set_parser(httpParser, payload)
+                    reader.set_parser(parser, payload)
                     # aiohttp.HttpPayloadParser(message), payload)
                 else:
                     payload = EMPTY_PAYLOAD

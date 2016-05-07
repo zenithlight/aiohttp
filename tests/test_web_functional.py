@@ -603,7 +603,7 @@ class TestWebFunctional(WebFunctionalSetupMixin, unittest.TestCase):
             resp = yield from request('GET', url, loop=self.loop,
                                       headers=headers,
                                       version=HttpVersion(0, 9))
-            self.assertNotIn('CONNECTION', resp.headers)
+            self.assertEqual(400, resp.status)
             resp.close()
 
         self.loop.run_until_complete(go())
