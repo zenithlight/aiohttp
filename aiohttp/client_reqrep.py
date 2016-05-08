@@ -25,6 +25,15 @@ from .streams import EOF_MARKER, FlowControlStreamReader
 from .multipart import MultipartWriter
 from .protocol import HttpMessage
 
+if bool(os.environ.get('AIOHTTP_NO_EXTENSIONS')):
+    ResponseParserImpl = aiohttp.HttpResponseParser()
+else:
+    try:
+        from . import httpparser
+        ResponseParserImpl = httpparser.HttpResponseParser
+    except ImportError:  # pragma: no cover
+        ResponseParserImpl = aiohttp.HttpResponseParser()
+
 
 __all__ = ('ClientRequest', 'ClientResponse')
 
@@ -528,7 +537,7 @@ class ClientResponse:
     _connection = None  # current connection
     flow_control_class = FlowControlStreamReader  # reader flow control
     _reader = None     # input stream
-    _response_parser = aiohttp.HttpResponseParser()
+    _response_parser = ResponseParserImpl
     _source_traceback = None
     # setted up by ClientRequest after ClientResponse object creation
     # post-init stage allows to not change ctor signature
@@ -601,7 +610,9 @@ class ClientResponse:
         self._setup_connection(connection)
 
         while True:
-            httpstream = self._reader.set_parser(self._response_parser)
+            parser = self._response_parser.messageParser()
+            httpstream = self._reader.set_parser(parser)
+            # httpstream = self._reader.set_parser(self._response_parser)
 
             # read response
             message = yield from httpstream.read()
@@ -624,11 +635,12 @@ class ClientResponse:
 
         # payload
         response_with_body = self._need_parse_response_body()
-        self._reader.set_parser(
-            aiohttp.HttpPayloadParser(message,
-                                      readall=read_until_eof,
-                                      response_with_body=response_with_body),
-            self.content)
+        payloadParser = parser.payloadParser(
+            message,
+            readall=read_until_eof,
+            response_with_body=response_with_body)
+
+        self._reader.set_parser(payloadParser, self.content)
 
         # cookies
         self.cookies = http.cookies.SimpleCookie()

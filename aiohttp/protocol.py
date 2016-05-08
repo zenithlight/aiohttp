@@ -60,6 +60,12 @@ class HttpParser:
         self.max_headers = max_headers
         self.max_field_size = max_field_size
 
+    def messageParser(self):
+        return self
+
+    def payloadParser(self, message):
+        return HttpPayloadParser(message)
+
     def parse_headers(self, lines):
         """Parses RFC 5322 headers from a stream.
 
@@ -200,7 +206,9 @@ class HttpRequestParser(HttpParser):
         # read headers
         headers, raw_headers, close, compression = self.parse_headers(lines)
         if close is None:  # then the headers weren't set in the request
-            if version <= HttpVersion10:  # HTTP 1.0 must asks to not close
+            if version < HttpVersion10:  # HTTP 0.9 does not support keep-alive
+                raise errors.BadHttpMessage('Bad request')
+            elif version <= HttpVersion10:  # HTTP 1.0 must asks to not close
                 close = True
             else:  # HTTP 1.1 must ask to close.
                 close = False
@@ -218,6 +226,10 @@ class HttpResponseParser(HttpParser):
 
     BadStatusLine could be raised in case of any errors in status line.
     Returns RawResponseMessage"""
+
+    def payloadParser(self, message, readall=False, response_with_body=True):
+        return HttpPayloadParser(
+            message, readall=readall, response_with_body=response_with_body)
 
     def __call__(self, out, buf):
         # read HTTP message (response line + headers)

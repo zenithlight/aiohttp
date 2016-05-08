@@ -2,6 +2,7 @@
 
 import asyncio
 import http.server
+import os
 import traceback
 import socket
 import sys
@@ -13,7 +14,16 @@ import aiohttp
 from aiohttp import errors, streams, hdrs, helpers
 from aiohttp.log import access_logger, server_logger
 from aiohttp.helpers import ensure_future
-from .httpparser import HttpParser
+
+if bool(os.environ.get('AIOHTTP_NO_EXTENSIONS')):
+    RequestParserImpl = aiohttp.HttpRequestParser()
+else:
+    try:
+        from . import httpparser
+        RequestParserImpl = httpparser.HttpRequestParser
+    except ImportError:  # pragma: no cover
+        RequestParserImpl = aiohttp.HttpRequestParser()
+
 
 __all__ = ('ServerHttpProtocol',)
 
@@ -83,8 +93,8 @@ class ServerHttpProtocol(aiohttp.StreamProtocol):
     _keep_alive_handle = None  # keep alive timer handle
     _timeout_handle = None  # slow request timer handle
 
+    _request_parser = RequestParserImpl  # default request parser
     _request_prefix = aiohttp.HttpPrefixParser()  # HTTP method parser
-    _request_parser = aiohttp.HttpRequestParser()  # default request parser
 
     def __init__(self, *, loop=None,
                  keep_alive=75,  # NGINX default value is 75 secs
@@ -245,7 +255,7 @@ class ServerHttpProtocol(aiohttp.StreamProtocol):
                         ceil(now+self._timeout), self.cancel_slow_request)
 
                 # read request headers
-                parser = HttpParser()
+                parser = self._request_parser.messageParser()
                 httpstream = reader.set_parser(parser)
                 message = yield from httpstream.read()
 
@@ -261,8 +271,8 @@ class ServerHttpProtocol(aiohttp.StreamProtocol):
                         hdrs.TRANSFER_ENCODING, '')):
                     payload = streams.FlowControlStreamReader(
                         reader, loop=self._loop)
-                    reader.set_parser(parser, payload)
-                    # aiohttp.HttpPayloadParser(message), payload)
+                    payloadParser = parser.payloadParser(message)
+                    reader.set_parser(payloadParser, payload)
                 else:
                     payload = EMPTY_PAYLOAD
 

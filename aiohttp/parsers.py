@@ -488,6 +488,11 @@ class ParserBuffer:
     def extend(self, data):
         self._data.extend(data)
 
+    def drain(self):
+        data = bytes(self._data)
+        self._data.clear()
+        return data
+
     def __len__(self):
         return len(self._data)
 

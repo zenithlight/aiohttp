@@ -4,7 +4,7 @@ import httptools
 from multidict import CIMultiDict, upstr
 
 from . import errors, hdrs
-from .protocol import VERSRE, RawRequestMessage, DeflateBuffer
+from .protocol import VERSRE, RawRequestMessage, RawResponseMessage, DeflateBuffer
 from .protocol import HttpVersion, HttpVersion10, HttpVersion11
 from .parsers import _ParserBufferHelper
 
@@ -13,12 +13,25 @@ VERSRE = re.compile('(\d+).(\d+)')
 
 class HttpParser:
 
-    def __init__(self, compression=True):
+    need_body = True
+
+    def __init__(self, response=False, compression=True):
         self._proto = HttpProtocol()
-        self._parser = httptools.HttpRequestParser(self._proto)
+        self._response = response
+        if response:
+            self._parser = httptools.HttpResponseParser(self._proto)
+        else:
+            self._parser = httptools.HttpRequestParser(self._proto)
         self._processed = 0
         self._compression = compression
         self._headers_completed = False
+
+    @classmethod
+    def messageParser(cls):
+        return cls()
+
+    def payloadParser(self, message):
+        return self
 
     def __call__(self, out, buf):
         self._out = out
@@ -26,11 +39,14 @@ class HttpParser:
         self._processed = 0
         
         # payload decompression wrapper
-        if (self._headers_completed and
+        if (self.need_body and self._headers_completed and
                 self._compression and self._proto.encoding):
             self._out = DeflateBuffer(out, self._proto.encoding)
 
         return self
+
+    def throw(self, exc):
+        raise exc
 
     def send(self, data):
         if data:
@@ -42,8 +58,10 @@ class HttpParser:
                 raise errors.BadStatusLine()
             except httptools.HttpParserError:
                 raise errors.BadHttpMessage('')
-            except httptools.HttpParserUpgrade:
-                pass
+            except httptools.HttpParserUpgrade as err:
+                offset = err.args[0]
+                self._buf.extend(data[offset:])
+                self._proto.message_completed = True
 
         self._processed += len(data)
 
@@ -57,17 +75,28 @@ class HttpParser:
                 version = HttpVersion(int(match.group(1)), int(match.group(2)))
 
                 close_conn = not self._parser.should_keep_alive()
-                path, headers, raw_headers, encoding = (
-                    self._proto.url, self._proto.headers,
+                headers, raw_headers, encoding = (
+                    self._proto.headers,
                     self._proto.raw_headers, self._proto.encoding)
 
-                method = self._parser.get_method().decode(
-                    'utf-8', 'surrogateescape')
-                self._out.feed_data(
-                    RawRequestMessage(
-                        method, path, version, headers,
-                        raw_headers, close_conn, encoding),
-                    self._processed)
+                if self._response:
+                    status = self._parser.get_status_code()
+                    if status < 100 or status > 999:
+                        raise errors.BadStatusLine('')
+                    self._out.feed_data(
+                        RawResponseMessage(
+                            version, status, '',
+                            headers, raw_headers, close_conn, encoding),
+                        self._processed)
+                else:
+                    method = self._parser.get_method().decode(
+                        'utf-8', 'surrogateescape').upper()
+                    self._out.feed_data(
+                        RawRequestMessage(
+                            method, self._proto.url, version, headers,
+                            raw_headers, close_conn, encoding),
+                        self._processed)
+
                 self._out.feed_eof()
 
                 self._out = None
@@ -76,30 +105,36 @@ class HttpParser:
                 self._headers_completed = True
                 raise StopIteration
         else:
-            for chunk in self._proto.body:
-                self._out.feed_data(chunk, len(chunk))
-            self._proto.body.clear()
+            if self.need_body:
+                for chunk in self._proto.body:
+                    self._out.feed_data(chunk, len(chunk))
+                self._proto.body.clear()
 
             if self._proto.message_completed:
                 self._out.feed_eof()
                 raise StopIteration
 
     def __next__(self):
-        buf = self._buf
+        if self._proto.message_completed:
+            self.send(b'')
 
-        try:
-            self.send(buf._data)
+        self.send(self._buf.drain())
 
-            buf._data.clear()
-            buf._helper = _ParserBufferHelper(None, buf._data)
-            buf._writer = buf._feed_data(buf._helper)
-            next(buf._writer)
-        except StopIteration:
-            buf._data.clear()
-            buf._helper = _ParserBufferHelper(None, buf._data)
-            buf._writer = buf._feed_data(buf._helper)
-            next(buf._writer)
-            raise
+
+class HttpRequestParser(HttpParser):
+
+    def __init__(self, compression=True):
+        super().__init__(False, compression)
+
+
+class HttpResponseParser(HttpParser):
+
+    def __init__(self, compression=True):
+        super().__init__(True, compression)
+
+    def payloadParser(self, message, readall=False, response_with_body=True):
+        self.need_body = response_with_body
+        return self
 
 
 class HttpProtocol:

@@ -32,6 +32,14 @@ def test_feed_data_after_exception(buf):
     assert bytes(buf) == b'data'
 
 
+def test_drain(buf):
+    buf.feed_data(b'data')
+    assert len(buf) == 4
+    assert bytes(buf), b'data'
+    assert buf.drain() == b'data'
+    assert bytes(buf) == b''
+
+
 def test_read_exc(buf):
     p = buf.read(3)
     next(p)
