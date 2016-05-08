@@ -58,7 +58,6 @@ _SocketSocketTransport ->
 
 import asyncio
 import asyncio.streams
-import inspect
 import socket
 from . import errors
 from .streams import FlowControlDataQueue, EofStream

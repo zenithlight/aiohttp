@@ -1,12 +1,11 @@
 """httptools integration"""
 import re
 import httptools
-from multidict import CIMultiDict, upstr
+from multidict import CIMultiDict
 
 from . import errors, hdrs
-from .protocol import VERSRE, RawRequestMessage, RawResponseMessage, DeflateBuffer
-from .protocol import HttpVersion, HttpVersion10, HttpVersion11
-from .parsers import _ParserBufferHelper
+from .protocol import RawRequestMessage, RawResponseMessage, DeflateBuffer
+from .protocol import HttpVersion
 
 VERSRE = re.compile('(\d+).(\d+)')
 
@@ -37,7 +36,7 @@ class HttpParser:
         self._out = out
         self._buf = buf
         self._processed = 0
-        
+
         # payload decompression wrapper
         if (self.need_body and self._headers_completed and
                 self._compression and self._proto.encoding):
@@ -177,7 +176,7 @@ class HttpProtocol:
 
     def on_body(self, body):
         self.body.append(body)
-    
+
     def on_message_complete(self):
         self.message_completed = True
 

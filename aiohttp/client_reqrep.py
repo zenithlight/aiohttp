@@ -635,12 +635,12 @@ class ClientResponse:
 
         # payload
         response_with_body = self._need_parse_response_body()
-        payloadParser = parser.payloadParser(
+        payload_parser = parser.payloadParser(
             message,
             readall=read_until_eof,
             response_with_body=response_with_body)
 
-        self._reader.set_parser(payloadParser, self.content)
+        self._reader.set_parser(payload_parser, self.content)
 
         # cookies
         self.cookies = http.cookies.SimpleCookie()

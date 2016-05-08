@@ -5,7 +5,6 @@ import http.server
 import os
 import traceback
 import socket
-import sys
 
 from html import escape as html_escape
 from math import ceil
@@ -271,8 +270,8 @@ class ServerHttpProtocol(aiohttp.StreamProtocol):
                         hdrs.TRANSFER_ENCODING, '')):
                     payload = streams.FlowControlStreamReader(
                         reader, loop=self._loop)
-                    payloadParser = parser.payloadParser(message)
-                    reader.set_parser(payloadParser, payload)
+                    payload_parser = parser.payloadParser(message)
+                    reader.set_parser(payload_parser, payload)
                 else:
                     payload = EMPTY_PAYLOAD
 
