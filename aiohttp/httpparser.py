@@ -153,14 +153,8 @@ class HttpProtocol:
         name = bname.decode('utf-8', 'surrogateescape')
         value = bvalue.decode('utf-8', 'surrogateescape')
 
-        # keep-alive and encoding
-        if name == hdrs.CONNECTION:
-            v = value.lower()
-            if v == 'close':
-                self.close_conn = True
-            elif v == 'keep-alive':
-                self.close_conn = False
-        elif name == hdrs.CONTENT_ENCODING:
+        # encoding
+        if name == hdrs.CONTENT_ENCODING:
             enc = value.lower()
             if enc in ('gzip', 'deflate'):
                 self.encoding = enc
