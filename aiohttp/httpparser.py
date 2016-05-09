@@ -38,9 +38,9 @@ class HttpParser:
         self._processed = 0
 
         # payload decompression wrapper
-        if (self.need_body and self._headers_completed and
-                self._compression and self._proto.encoding):
-            self._out = DeflateBuffer(out, self._proto.encoding)
+        #if (self.need_body and self._headers_completed and
+        #        self._compression and self._proto.encoding):
+        #    self._out = DeflateBuffer(out, self._proto.encoding)
 
         return self
 
@@ -96,22 +96,22 @@ class HttpParser:
                             raw_headers, close_conn, encoding),
                         self._processed)
 
-                self._out.feed_eof()
+                #self._out.feed_eof()
 
                 self._out = None
                 self._buf = None
                 self._processed = 0
                 self._headers_completed = True
-                raise StopIteration
+                #raise StopIteration
         else:
             if self.need_body:
                 for chunk in self._proto.body:
                     self._out.feed_data(chunk, len(chunk))
                 self._proto.body.clear()
 
-            if self._proto.message_completed:
-                self._out.feed_eof()
-                raise StopIteration
+            #if self._proto.message_completed:
+            #    self._out.feed_eof()
+            #    raise StopIteration
 
     def __next__(self):
         if self._proto.message_completed:

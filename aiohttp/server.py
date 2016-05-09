@@ -180,16 +180,18 @@ class ServerHttpProtocol(aiohttp.StreamProtocol):
             self._timeout_handle = None
 
     def data_received(self, data):
-        super().data_received(data)
+        #super().data_received(data)
+
+        self.parser.send(data)
 
         # reading request
         if not self._reading_request:
             self._reading_request = True
 
         # stop keep-alive timer
-        if self._keep_alive_handle is not None:
-            self._keep_alive_handle.cancel()
-            self._keep_alive_handle = None
+        #if self._keep_alive_handle is not None:
+        #    self._keep_alive_handle.cancel()
+        #    self._keep_alive_handle = None
 
     def keep_alive(self, val):
         """Set keep-alive connection mode.
@@ -241,27 +243,29 @@ class ServerHttpProtocol(aiohttp.StreamProtocol):
             payload = None
             try:
                 # read HTTP request method
-                prefix = reader.set_parser(self._request_prefix)
-                yield from prefix.read()
+                #prefix = reader.set_parser(self._request_prefix)
+                #yield from prefix.read()
 
                 # start reading request
                 self._reading_request = True
 
                 # start slow request timer
-                if self._timeout and self._timeout_handle is None:
-                    now = self._loop.time()
-                    self._timeout_handle = self._loop.call_at(
-                        ceil(now+self._timeout), self.cancel_slow_request)
+                #if self._timeout and self._timeout_handle is None:
+                #    now = self._loop.time()
+                #    self._timeout_handle = self._loop.call_at(
+                #        ceil(now+self._timeout), self.cancel_slow_request)
 
                 # read request headers
-                parser = self._request_parser.messageParser()
-                httpstream = reader.set_parser(parser)
-                message = yield from httpstream.read()
+                out = aiohttp.DataQueue(loop=self._loop)
+                self.parser = self._request_parser.messageParser()
+                self.parser(out, None)
+                #httpstream = reader.set_parser(parser)
+                message = yield from out.read()
 
                 # cancel slow request timer
-                if self._timeout_handle is not None:
-                    self._timeout_handle.cancel()
-                    self._timeout_handle = None
+                #if self._timeout_handle is not None:
+                #    self._timeout_handle.cancel()
+                #    self._timeout_handle = None
 
                 # request may not have payload
                 if (message.headers.get(hdrs.CONTENT_LENGTH, 0) or

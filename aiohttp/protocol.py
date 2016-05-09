@@ -621,13 +621,13 @@ class HttpMessage(ABC):
                 name, value)
 
         name = upstr(name)
-        value = value.strip()
+        #value = value.strip()
 
         if name == hdrs.CONTENT_LENGTH:
             self.length = int(value)
 
-        if name == hdrs.TRANSFER_ENCODING:
-            self.has_chunked_hdr = value.lower().strip() == 'chunked'
+        #if name == hdrs.TRANSFER_ENCODING:
+        #    self.has_chunked_hdr = value.lower().strip() == 'chunked'
 
         if name == hdrs.CONNECTION:
             val = value.lower()
@@ -640,10 +640,10 @@ class HttpMessage(ABC):
             elif 'keep-alive' in val:
                 self.keepalive = True
 
-        elif name == hdrs.UPGRADE:
-            if 'websocket' in value.lower():
-                self.websocket = True
-                self.headers[name] = value
+        #elif name == hdrs.UPGRADE:
+        #    if 'websocket' in value.lower():
+        #        self.websocket = True
+        #        self.headers[name] = value
 
         elif name not in self.HOP_HEADERS:
             # ignore hop-by-hop headers
@@ -663,17 +663,17 @@ class HttpMessage(ABC):
         assert not self.headers_sent, 'headers have been sent already'
         self.headers_sent = True
 
-        if self.chunked or self.autochunked():
-            self.writer = self._write_chunked_payload()
-            self.headers[hdrs.TRANSFER_ENCODING] = 'chunked'
+        #if self.chunked or self.autochunked():
+        #    self.writer = self._write_chunked_payload()
+        #    self.headers[hdrs.TRANSFER_ENCODING] = 'chunked'
 
-        elif self.length is not None:
-            self.writer = self._write_length_payload(self.length)
+        #elif self.length is not None:
+        #    self.writer = self._write_length_payload(self.length)
 
-        else:
-            self.writer = self._write_eof_payload()
+        #else:
+        #    self.writer = self._write_eof_payload()
 
-        next(self.writer)
+        #next(self.writer)
 
         self._add_default_headers()
 
@@ -718,18 +718,19 @@ class HttpMessage(ABC):
         if self._send_headers and not self.headers_sent:
             self.send_headers()
 
-        assert self.writer is not None, 'send_headers() is not called.'
+        #assert self.writer is not None, 'send_headers() is not called.'
 
-        if self.filter:
-            chunk = self.filter.send(chunk)
-            while chunk not in (EOF_MARKER, EOL_MARKER):
-                if chunk:
-                    self.writer.send(chunk)
-                chunk = next(self.filter)
-        else:
-            if chunk is not EOF_MARKER:
-                self.writer.send(chunk)
+        #if self.filter:
+        #    chunk = self.filter.send(chunk)
+        #    while chunk not in (EOF_MARKER, EOL_MARKER):
+        #        if chunk:
+        #            self.writer.send(chunk)
+        #        chunk = next(self.filter)
+        #else:
+        #    if chunk is not EOF_MARKER:
+        #        self.writer.send(chunk)
 
+        self.transport.write(chunk)
         self._output_size += self.output_length - size
 
         if self._output_size > 64 * 1024:
@@ -740,11 +741,11 @@ class HttpMessage(ABC):
         return ()
 
     def write_eof(self):
-        self.write(EOF_MARKER)
-        try:
-            self.writer.throw(aiohttp.EofStream())
-        except StopIteration:
-            pass
+        #self.write(EOF_MARKER)
+        #try:
+        #    self.writer.throw(aiohttp.EofStream())
+        #except StopIteration:
+        #    pass
 
         return self.transport.drain()
 
@@ -885,9 +886,9 @@ class Response(HttpMessage):
     def _add_default_headers(self):
         super()._add_default_headers()
 
-        if hdrs.DATE not in self.headers:
-            # format_date_time(None) is quite expensive
-            self.headers.setdefault(hdrs.DATE, format_date_time(None))
+        #if hdrs.DATE not in self.headers:
+        #    # format_date_time(None) is quite expensive
+        #    self.headers.setdefault(hdrs.DATE, format_date_time(None))
         self.headers.setdefault(hdrs.SERVER, self.SERVER_SOFTWARE)
 
 
