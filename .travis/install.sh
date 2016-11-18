@@ -25,6 +25,9 @@ if [[ "$(uname -s)" == 'Darwin' ]]; then
   python -m pip install virtualenv
 else
   pip install virtualenv
+
+  sudo apt-get install libenchant-dev
+  pip install sphinxcontrib-spelling
 fi
 
 python -m virtualenv ~/.venv
@@ -41,7 +44,7 @@ pip install codecov
 if python -c "import sys; sys.exit(sys.version_info < (3,5))"; then
   pip install uvloop;
 fi
-pip install sphinxcontrib-spelling
+
 
 which py.test
 py.test --version
