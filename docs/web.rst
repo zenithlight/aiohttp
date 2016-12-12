@@ -566,7 +566,7 @@ a container for the file as well as some of its metadata::
         filename = mp3.filename
 
         # .file contains the actual file data that needs to be stored somewhere.
-        mp3_file = data['mp3'].file
+        mp3_file = mp3.file
 
         content = mp3_file.read()
 
