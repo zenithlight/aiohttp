@@ -572,7 +572,7 @@ a container for the file as well as some of its metadata::
 
         return web.Response(body=content,
                             headers=MultiDict(
-                                {'CONTENT-DISPOSITION': mp3_file})
+                                {'CONTENT-DISPOSITION': mp3_file}))
 
 
 You might be noticed a big warning in example above. The general issue is that
